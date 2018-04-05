@@ -1,7 +1,9 @@
 import nacl from '../external/nacl-fast';
 import convert from '../utils/convert';
 import Helpers from '../utils/helpers';
-import CryptoJS from 'crypto-js';
+import SHA3 from 'sha3'; // in fact this is Keccak
+
+const { byteToHexString, hexStringToByte } = Helpers;
 
 /***
 * Create a BinaryKey object
@@ -16,53 +18,44 @@ let BinaryKey = function(keyData) {
 }
 
 let hashfunc = function(dest, data, dataLength) {
-    let convertedData = convert.ua2words(data, dataLength);
-    let hash = CryptoJS.SHA3(convertedData, {
-        outputLength: 512
-    });
-    convert.words2ua(dest, hash);
+    let hash = new SHA3.SHA3Hash(512);
+    hash.update(data);
+    return convert.hex2ua(hash.digest('hex'));
 }
 
 /***
-* Create an hasher object
+* Create an hasher class
 */
-let hashobj = function() {
-    this.sha3 = CryptoJS.algo.SHA3.create({
-        outputLength: 512
-    });
-    this.reset = function() {
-        this.sha3 = CryptoJS.algo.SHA3.create({
-            outputLength: 512
-        });
+class Hasher {
+    constructor() {
+        this.sha3 = new SHA3.SHA3Hash(512);
     }
 
-    this.update = function(data) {
+    reset() {
+        this.sha3 = new SHA3.SHA3Hash(512);
+    }
+
+    update(data) {
         if (data instanceof BinaryKey) {
-            let converted = convert.ua2words(data.data, data.data.length);
-            let result = CryptoJS.enc.Hex.stringify(converted);
-            this.sha3.update(converted);
-
+            this.sha3.update(data.data);
         } else if (data instanceof Uint8Array) {
-            let converted = convert.ua2words(data, data.length);
-            this.sha3.update(converted);
-
+            this.sha3.update(data);
         } else if (typeof data === "string") {
-            let converted = CryptoJS.enc.Hex.parse(data);
+            let converted = convert.hex2ua(data);
             this.sha3.update(converted);
-
         } else {
             throw new Error("unhandled argument");
         }
     }
 
-    this.finalize = function(result) {
-        let hash = this.sha3.finalize();
-        convert.words2ua(result, hash);
-    };
+    finalize() {
+        let hash = this.sha3.digest('hex');
+        return convert.hex2ua(hash);
+    }
 }
 
 /***
-* Create a KeyPair Object 
+* Create a KeyPair Object
 *
 * @param {string} privkey - An hex private key
 */
@@ -74,7 +67,7 @@ let KeyPair = function(privkey) {
     // Signature
     this.sign = (data) => {
         let sig = new Uint8Array(64);
-        let hasher = new hashobj();
+        let hasher = new Hasher();
         let r = nacl.lowlevel.crypto_sign_hash(sig, this, data, hasher);
         if (!r) {
             alert("Couldn't sign the tx, generated invalid signature");
@@ -114,18 +107,18 @@ let verifySignature = function(publicKey, data, signature) {
     // Errors
     if(!publicKey || !data || !signature) throw new Error('Missing argument !');
     if (!Helpers.isPublicKeyValid(publicKey)) throw new Error('Public key is not valid !');
-    
+
     if (!Helpers.isHexadecimal(signature)) {
         //console.error('Signature must be hexadecimal only !');
         return false;
     }
     if (signature.length !== 128) {
-        //console.error('Signature length is incorrect !') 
+        //console.error('Signature length is incorrect !')
         return false;
     }
 
     // Create an hasher object
-    let hasher = new hashobj();
+    let hasher = new Hasher();
     // Convert public key to Uint8Array
     let _pk = convert.hex2ua(publicKey);
     // Convert signature to Uint8Array
@@ -137,12 +130,12 @@ let verifySignature = function(publicKey, data, signature) {
 
     if (c.unpackneg(q, _pk)) return false;
 
-    const h = new Uint8Array(64);
+    let h = new Uint8Array(64);
     hasher.reset();
     hasher.update(_signature.subarray(0, 64/2));
     hasher.update(_pk);
     hasher.update(data);
-    hasher.finalize(h);
+    h = hasher.finalize();
 
     c.reduce(h);
     c.scalarmult(p, q, h);

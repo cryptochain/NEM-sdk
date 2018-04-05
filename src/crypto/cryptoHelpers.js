@@ -3,8 +3,11 @@ import convert from '../utils/convert';
 import Address from '../model/address';
 import nacl from '../external/nacl-fast';
 import Network from '../model/network';
-import CryptoJS from 'crypto-js';
 import Helpers from '../utils/helpers';
+import crypto from 'crypto';
+import SHA3 from 'sha3'; // in fact this is Keccak
+
+const { byteToHexString, hexStringToByte } = Helpers;
 
 /**
  * Encrypt a private key for mobile apps (AES_PBKF2)
@@ -19,20 +22,19 @@ let toMobileKey = function(password, privateKey) {
     if (!password || !privateKey) throw new Error('Missing argument !');
     if (!Helpers.isPrivateKeyValid(privateKey)) throw new Error('Private key is not valid !');
     // Processing
-    let salt = CryptoJS.lib.WordArray.random(256 / 8);
-    let key = CryptoJS.PBKDF2(password, salt, {
-        keySize: 256 / 32,
-        iterations: 2000
-    });
-    let iv = nacl.randomBytes(16)
-    let encIv = {
-        iv: convert.ua2words(iv, 16)
-    };
-    let encrypted = CryptoJS.AES.encrypt(CryptoJS.enc.Hex.parse(privateKey), key, encIv);
+    // let salt = CryptoJS.lib.WordArray.random(256 / 8);
+    let salt = crypto.randomBytes(256 / 8);
+    let key = crypto.pbkdf2Sync(password, salt.toString('hex'), 2000, 256 / 32, 'ripemd160');
+    let iv = crypto.randomBytes(16);
+    console.log(key.length);
+    // let encrypted = CryptoJS.AES.encrypt(CryptoJS.enc.Hex.parse(privateKey), key, encIv);
+    let cipherAES = crypto.createCipheriv('aes256', key, iv);
+    let encrypted = cipherAES.update(privateKey, 'hex', 'hex');
+    encrypted += cipherAES.final('hex');
     // Result
     return {
-        encrypted: convert.ua2hex(iv) + encrypted.ciphertext,
-        salt:  salt.toString()
+        encrypted: convert.ua2hex(iv) + encrypted,
+        salt: salt.toString('hex')
     }
 };
 
@@ -50,16 +52,20 @@ let derivePassSha = function(password, count) {
     if(!count || count <= 0) throw new Error('Please provide a count number above 0');
     // Processing
     let data = password;
-    console.time('sha3^n generation time');
-    for (let i = 0; i < count; ++i) {
-        data = CryptoJS.SHA3(data, {
-            outputLength: 256
-        });
+    if (process.env.NODE_ENV !== 'production') {
+        console.time('sha3^n generation time');
     }
-    console.timeEnd('sha3^n generation time');
+    for (let i = 0; i < count; ++i) {
+        const hash = new SHA3.SHA3Hash(256);
+        hash.update(data);
+        data = hexStringToByte(hash.digest('hex'));
+    }
+    if (process.env.NODE_ENV !== 'production') {
+        console.timeEnd('sha3^n generation time');
+    }
     // Result
     return {
-        'priv': CryptoJS.enc.Hex.stringify(data)
+        'priv': byteToHexString(data)
     };
 };
 
@@ -98,7 +104,7 @@ let passwordToPrivatekey = function(common, walletAccount, algo) {
             // Else child accounts have encrypted and iv so we decrypt
             let pass = derivePassSha(common.password, 20);
             let obj = {
-                ciphertext: CryptoJS.enc.Hex.parse(walletAccount.encrypted),
+                ciphertext: hexStringToByte(walletAccount.encrypted),
                 iv: convert.hex2ua(walletAccount.iv),
                 key: convert.hex2ua(pass.priv)
             };
@@ -108,7 +114,7 @@ let passwordToPrivatekey = function(common, walletAccount, algo) {
     } else if (algo === "pass:bip32") { // Wallets from PRNG
         let pass = derivePassSha(common.password, 20);
         let obj = {
-            ciphertext: CryptoJS.enc.Hex.parse(walletAccount.encrypted),
+            ciphertext: hexStringToByte(walletAccount.encrypted),
             iv: convert.hex2ua(walletAccount.iv),
             key: convert.hex2ua(pass.priv)
         };
@@ -117,7 +123,7 @@ let passwordToPrivatekey = function(common, walletAccount, algo) {
     } else if (algo === "pass:enc") { // Private Key wallets
         let pass = derivePassSha(common.password, 20);
         let obj = {
-            ciphertext: CryptoJS.enc.Hex.parse(walletAccount.encrypted),
+            ciphertext: hexStringToByte(walletAccount.encrypted),
             iv: convert.hex2ua(walletAccount.iv),
             key: convert.hex2ua(pass.priv)
         };
@@ -154,11 +160,9 @@ let checkAddress = function(priv, network, _expectedAddress) {
 };
 
 function hashfunc(dest, data, dataLength) {
-    let convertedData = convert.ua2words(data, dataLength);
-    let hash = CryptoJS.SHA3(convertedData, {
-        outputLength: 512
-    });
-    convert.words2ua(dest, hash);
+    let hash = new SHA3.SHA3Hash(512);
+    hash = hash.update(data);
+    return convert.hex2ua(hash.digest('hex'));
 }
 
 function key_derive(shared, salt, sk, pk) {
@@ -166,10 +170,9 @@ function key_derive(shared, salt, sk, pk) {
     for (let i = 0; i < salt.length; i++) {
         shared[i] ^= salt[i];
     }
-    let hash = CryptoJS.SHA3(convert.ua2words(shared, 32), {
-        outputLength: 256
-    });
-    return hash;
+    let hash = new SHA3.SHA3Hash(256);
+    hash = hash.update(shared);
+    return hash.digest('hex');
 }
 
 /**
@@ -178,7 +181,7 @@ function key_derive(shared, salt, sk, pk) {
  * @return {Uint8Array} - A random key
  */
 let randomKey = function() {
-    let rkey = nacl.randomBytes(32)
+    let rkey = crypto.randomBytes(32)
     return rkey;
 };
 
@@ -194,15 +197,13 @@ let encrypt = function(data, key) {
     // Errors
     if (!data || !key) throw new Error('Missing argument !');
     // Processing
-    let iv = nacl.randomBytes(16)
-    let encKey = convert.ua2words(key, 32);
-    let encIv = {
-        iv: convert.ua2words(iv, 16)
-    };
-    let encrypted = CryptoJS.AES.encrypt(CryptoJS.enc.Hex.parse(data), encKey, encIv);
+    let iv = crypto.randomBytes(16);
+    let cipherAES = crypto.createCipheriv('aes256', key, iv);
+    let encrypted = cipherAES.update(data, 'hex', 'hex');
+    encrypted += cipherAES.final('hex');
     // Result
     return {
-        ciphertext: encrypted.ciphertext,
+        ciphertext: encrypted,
         iv: iv,
         key: key
     };
@@ -219,12 +220,11 @@ let decrypt = function(data) {
     // Errors
     if (!data) throw new Error('Missing argument !');
     // Processing
-    let encKey = convert.ua2words(data.key, 32);
-    let encIv = {
-        iv: convert.ua2words(data.iv, 16)
-    };
+    let decipherAES = crypto.createDecipheriv('aes256', data.key, data.iv);
+    let decrypted = decipherAES.update(data.ciphertext, 'hex', 'hex');
+    decrypted += decipherAES.final('hex')
     // Result
-    return CryptoJS.enc.Hex.stringify(CryptoJS.AES.decrypt(data, encKey, encIv));
+    return decrypted;
 };
 
 /**
@@ -244,8 +244,8 @@ let encodePrivKey = function(privateKey, password) {
     let r = encrypt(privateKey, convert.hex2ua(pass.priv));
     // Result
     return {
-        ciphertext: CryptoJS.enc.Hex.stringify(r.ciphertext),
-        iv: convert.ua2hex(r.iv)
+        ciphertext: r.ciphertext,
+        iv: convert.ua2hex(r.iv),
     };
 };
 
@@ -269,14 +269,13 @@ let _encode = function(senderPriv, recipientPub, msg, iv, salt) {
     let sk = convert.hex2ua_reversed(senderPriv);
     let pk = convert.hex2ua(recipientPub);
     let shared = new Uint8Array(32);
-    let r = key_derive(shared, salt, sk, pk);
-    let encKey = r;
-    let encIv = {
-        iv: convert.ua2words(iv, 16)
-    };
-    let encrypted = CryptoJS.AES.encrypt(CryptoJS.enc.Hex.parse(convert.utf8ToHex(msg)), encKey, encIv);
+    let encKey = key_derive(shared, salt, sk, pk);
+    console.log(encKey.length, Buffer.from(encKey).length);
+    let cipherAES = crypto.createCipheriv('aes256', Buffer.from(encKey), Buffer.from(iv));
+    let encrypted = cipherAES.update(convert.utf8ToHex(msg), 'hex', 'hex');
+    encrypted += cipherAES.final('hex');
     // Result
-    let result = convert.ua2hex(salt) + convert.ua2hex(iv) + CryptoJS.enc.Hex.stringify(encrypted.ciphertext);
+    let result = convert.ua2hex(salt) + convert.ua2hex(iv) + byteToHexString(encrypted);
     return result;
 };
 
@@ -333,9 +332,10 @@ let decode = function(recipientPrivate, senderPublic, _payload) {
     let encrypted = {
         'ciphertext': convert.ua2words(payload, payload.length)
     };
-    let plain = CryptoJS.AES.decrypt(encrypted, encKey, encIv);
+    let decipherAES = crypto.createDecipheriv('aes', encKey, encIv);
+    let decrypted = cipherAES.update(encrypted, 'utf8', 'hex');
     // Result
-    let hexplain = CryptoJS.enc.Hex.stringify(plain);
+    let hexplain = byteToHexString(decipherAES.final('utf-8'));
     return hexplain;
 };
 

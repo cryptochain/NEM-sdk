@@ -1,8 +1,9 @@
 {
   "presets": [
-    "es2015"
-  ],
-  "plugins": [
-    "transform-inline-environment-variables"
+    ["env", {
+      "targets": {
+        "node": "current"
+      }
+    }]
   ]
 }
