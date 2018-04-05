@@ -11,7 +11,7 @@
     "test": "mocha --compilers js:babel-core/register -- recursive",
     "build": "babel src -d lib",
     "postversion": "git push origin master && git push --tags",
-    "prepublishOnly": "NODE_ENV=production npm run build"
+    "prepublishOnly": "npm test && NODE_ENV=production npm run build"
   },
   "keywords": [],
   "author": "",
