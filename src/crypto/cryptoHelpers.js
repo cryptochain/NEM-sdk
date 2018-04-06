@@ -10,35 +10,6 @@ import SHA3 from 'sha3'; // in fact this is Keccak
 const { byteToHexString, hexStringToByte } = Helpers;
 
 /**
- * Encrypt a private key for mobile apps (AES_PBKF2)
- *
- * @param {string} password - A wallet password
- * @param {string} privateKey - An account private key
- *
- * @return {object} - The encrypted data
- */
-let toMobileKey = function(password, privateKey) {
-    // Errors
-    if (!password || !privateKey) throw new Error('Missing argument !');
-    if (!Helpers.isPrivateKeyValid(privateKey)) throw new Error('Private key is not valid !');
-    // Processing
-    // let salt = CryptoJS.lib.WordArray.random(256 / 8);
-    let salt = crypto.randomBytes(256 / 8);
-    let key = crypto.pbkdf2Sync(password, salt.toString('hex'), 2000, 256 / 32, 'ripemd160');
-    let iv = crypto.randomBytes(16);
-    console.log(key.length);
-    // let encrypted = CryptoJS.AES.encrypt(CryptoJS.enc.Hex.parse(privateKey), key, encIv);
-    let cipherAES = crypto.createCipheriv('aes256', key, iv);
-    let encrypted = cipherAES.update(privateKey, 'hex', 'hex');
-    encrypted += cipherAES.final('hex');
-    // Result
-    return {
-        encrypted: convert.ua2hex(iv) + encrypted,
-        salt: salt.toString('hex')
-    }
-};
-
-/**
  * Derive a private key from a password using count iterations of SHA3-256
  *
  * @param {string} password - A wallet password
@@ -161,7 +132,7 @@ let checkAddress = function(priv, network, _expectedAddress) {
 
 function hashfunc(dest, data, dataLength) {
     let hash = new SHA3.SHA3Hash(512);
-    hash = hash.update(data);
+    hash.update(data);
     return convert.hex2ua(hash.digest('hex'));
 }
 
@@ -171,7 +142,7 @@ function key_derive(shared, salt, sk, pk) {
         shared[i] ^= salt[i];
     }
     let hash = new SHA3.SHA3Hash(256);
-    hash = hash.update(shared);
+    hash.update(shared);
     return hash.digest('hex');
 }
 
@@ -193,18 +164,18 @@ let randomKey = function() {
  *
  * @return {object} - The encrypted data
  */
-let encrypt = function(data, key) {
+let encrypt = function(data, key, iv) {
     // Errors
     if (!data || !key) throw new Error('Missing argument !');
     // Processing
-    let iv = crypto.randomBytes(16);
-    let cipherAES = crypto.createCipheriv('aes256', key, iv);
+    const actualIV = iv || crypto.randomBytes(16);
+    let cipherAES = crypto.createCipheriv('aes256', key, actualIV);
     let encrypted = cipherAES.update(data, 'hex', 'hex');
     encrypted += cipherAES.final('hex');
     // Result
     return {
         ciphertext: encrypted,
-        iv: iv,
+        iv: actualIV,
         key: key
     };
 };
@@ -222,7 +193,7 @@ let decrypt = function(data) {
     // Processing
     let decipherAES = crypto.createDecipheriv('aes256', data.key, data.iv);
     let decrypted = decipherAES.update(data.ciphertext, 'hex', 'hex');
-    decrypted += decipherAES.final('hex')
+    decrypted += decipherAES.final('hex');
     // Result
     return decrypted;
 };
@@ -270,12 +241,14 @@ let _encode = function(senderPriv, recipientPub, msg, iv, salt) {
     let pk = convert.hex2ua(recipientPub);
     let shared = new Uint8Array(32);
     let encKey = key_derive(shared, salt, sk, pk);
-    console.log(encKey.length, Buffer.from(encKey).length);
-    let cipherAES = crypto.createCipheriv('aes256', Buffer.from(encKey), Buffer.from(iv));
-    let encrypted = cipherAES.update(convert.utf8ToHex(msg), 'hex', 'hex');
-    encrypted += cipherAES.final('hex');
+    console.log(encKey);
+
+    // let cipherAES = crypto.createCipheriv('aes256', convert.hex2ua(encKey), iv);
+    // let encrypted = cipherAES.update(convert.hex2ua(convert.utf8ToHex(msg)), null, 'hex');
+    // encrypted += cipherAES.final('hex');
+    let encrypted = encrypt(convert.utf8ToHex(msg), convert.hex2ua(encKey), iv).ciphertext;
     // Result
-    let result = convert.ua2hex(salt) + convert.ua2hex(iv) + byteToHexString(encrypted);
+    let result = convert.ua2hex(salt) + convert.ua2hex(iv) + encrypted;
     return result;
 };
 
@@ -340,7 +313,6 @@ let decode = function(recipientPrivate, senderPublic, _payload) {
 };
 
 module.exports = {
-    toMobileKey,
     derivePassSha,
     passwordToPrivatekey,
     checkAddress,
