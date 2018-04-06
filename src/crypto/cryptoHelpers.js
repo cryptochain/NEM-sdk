@@ -241,12 +241,12 @@ let _encode = function(senderPriv, recipientPub, msg, iv, salt) {
     let pk = convert.hex2ua(recipientPub);
     let shared = new Uint8Array(32);
     let encKey = key_derive(shared, salt, sk, pk);
-    console.log(encKey);
+    console.log(Buffer.from(encKey).length);
 
-    // let cipherAES = crypto.createCipheriv('aes256', convert.hex2ua(encKey), iv);
-    // let encrypted = cipherAES.update(convert.hex2ua(convert.utf8ToHex(msg)), null, 'hex');
-    // encrypted += cipherAES.final('hex');
-    let encrypted = encrypt(convert.utf8ToHex(msg), convert.hex2ua(encKey), iv).ciphertext;
+    let cipherAES = crypto.createCipheriv('aes256', convert.hex2ua(encKey), iv);
+    let encrypted = cipherAES.update(convert.utf8ToHex(msg), 'hex', 'hex');
+    encrypted += cipherAES.final('hex');
+    // let encrypted = encrypt(convert.utf8ToHex(msg), encKey, iv).ciphertext;
     // Result
     let result = convert.ua2hex(salt) + convert.ua2hex(iv) + encrypted;
     return result;
@@ -305,11 +305,11 @@ let decode = function(recipientPrivate, senderPublic, _payload) {
     let encrypted = {
         'ciphertext': convert.ua2words(payload, payload.length)
     };
-    let decipherAES = crypto.createDecipheriv('aes', encKey, encIv);
-    let decrypted = cipherAES.update(encrypted, 'utf8', 'hex');
+    let decipherAES = crypto.createDecipheriv('aes256', convert.hex2ua(encKey), iv);
+    let decrypted = decipherAES.update(_payload, 'utf8', 'hex');
+    decrypted += decipherAES.final('hex');
     // Result
-    let hexplain = byteToHexString(decipherAES.final('utf-8'));
-    return hexplain;
+    return decrypted;
 };
 
 module.exports = {

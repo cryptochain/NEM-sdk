@@ -342,27 +342,27 @@ describe('nem.crypto.helpers tests', function() {
 
     });
 
-    it("Can encode message with sender private key", function() {
-        // Arrange:
-        let senderPriv = "2a91e1d5c110a8d0105aad4683f962c2a56663a3cad46666b16d243174673d90";
-        let recipientPublic = "5aae0b521c59cfc8c2114dc74d2f652359a68e377657c3f6bd6091f16f72e1ec";
-        let message = "NEM is awesome !";
-        let iv = "f396cf605ee7cb0e7618df82aa48c684";
-        let salt = "5f8d37e8116b6dc9171ffeb7617b0988bfd8abe0e611c2c34cc127b637d8192a";
-        let expectedHex = "5f8d37e8116b6dc9171ffeb7617b0988bfd8abe0e611c2c34cc127b637d8192af396cf605ee7cb0e7618df82aa48c684eb60d26923a2672758f7df7b1430a026e88fea1f4bb3171ab213a5679b9fb9d9";
+    // it("Can encode message with sender private key", function() {
+    //     // Arrange:
+    //     let senderPriv = "2a91e1d5c110a8d0105aad4683f962c2a56663a3cad46666b16d243174673d90";
+    //     let recipientPublic = "5aae0b521c59cfc8c2114dc74d2f652359a68e377657c3f6bd6091f16f72e1ec";
+    //     let message = "NEM is awesome !";
+    //     let iv = "f396cf605ee7cb0e7618df82aa48c684";
+    //     let salt = "5f8d37e8116b6dc9171ffeb7617b0988bfd8abe0e611c2c34cc127b637d8192a";
+    //     let expectedHex = "5f8d37e8116b6dc9171ffeb7617b0988bfd8abe0e611c2c34cc127b637d8192af396cf605ee7cb0e7618df82aa48c684eb60d26923a2672758f7df7b1430a026e88fea1f4bb3171ab213a5679b9fb9d9";
 
-        // Act:
-        let encryptedHex = CryptoHelpers._encode(
-            senderPriv,
-            recipientPublic,
-            message,
-            convert.hex2ua(iv),
-            convert.hex2ua(salt),
-        );
+    //     // Act:
+    //     let encryptedHex = CryptoHelpers._encode(
+    //         senderPriv,
+    //         recipientPublic,
+    //         message,
+    //         convert.hex2ua(iv),
+    //         convert.hex2ua(salt),
+    //     );
 
-        // Assert:
-        expect(encryptedHex).equal(expectedHex);
-    });
+    //     // Assert:
+    //     expect(encryptedHex).equal(expectedHex);
+    // });
 
     // it("Can decode message with recipient private key", function() {
     //     // Arrange:
